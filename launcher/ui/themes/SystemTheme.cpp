@@ -62,6 +62,9 @@ SystemTheme::SystemTheme()
 
 void SystemTheme::apply()
 {
+    changed_qcc_theme = qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_CONF");
+    ThemeManager::writeGlobalQMLTheme();
+
     ITheme::apply();
 }
 

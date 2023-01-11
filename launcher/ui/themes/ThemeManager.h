@@ -40,12 +40,16 @@ class ThemeManager {
     void applyCurrentlySelectedTheme();
     void setApplicationTheme(const QString& name);
 
+    [[nodiscard]] bool needsRestart() const;
+
     /// <summary>
     /// Returns the cat based on selected cat and with events (Birthday, XMas, etc.)
     /// </summary>
     /// <param name="catName">Optional, if you need a specific cat.</param>
     /// <returns></returns>
     static QString getCatImage(QString catName = "");
+
+    static void writeGlobalQMLTheme(const QString& conf_file_path = "");
 
    private:
     std::map<QString, std::unique_ptr<ITheme>> m_themes;

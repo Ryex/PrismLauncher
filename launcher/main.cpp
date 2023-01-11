@@ -44,6 +44,33 @@
 #include <chrono>
 #endif
 
+#include <fstream>
+#include <iostream>
+
+#include <QQuickStyle>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
+#include <QQuickWindow>
+#include <QSGRendererInterface>
+#endif
+
+/** We need this here because the environment variable MUST be set before creating
+ *  the Qt Application object for the QCC style to be applied correctly.
+ */
+void bootstrapThemeEnvironment()
+{
+    std::ifstream qml_theme_file(".qml_theme");
+    std::string line;
+    if (qml_theme_file.is_open()) {
+        if (std::getline(qml_theme_file, line))
+            qputenv("QT_QUICK_CONTROLS_CONF", line.data());
+
+        qml_theme_file.close();
+    } else {
+        std::cout << "No QML theme file could be found!" << std::endl;
+    }
+}
+
 int main(int argc, char *argv[])
 {
 #ifdef BREAK_INFINITE_LOOP
@@ -62,6 +89,17 @@ int main(int argc, char *argv[])
 #if QT_VERSION <= QT_VERSION_CHECK(6, 0, 0)
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+#endif
+
+    bootstrapThemeEnvironment();
+
+    // Avoids using the ugly default styles :|
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_CONF"))
+        QQuickStyle::setStyle("Fusion");
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0) && QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
+    // Avoids crash on Qt6 < 6.4
+    QQuickWindow::setGraphicsApi(QSGRendererInterface::GraphicsApi::OpenGL);
 #endif
 
     // initialize Qt

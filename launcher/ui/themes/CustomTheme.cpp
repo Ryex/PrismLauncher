@@ -157,7 +157,8 @@ static bool writeThemeJson(const QString& path,
 /// @param baseTheme Base Theme
 /// @param fileInfo FileInfo object for file to load
 /// @param isManifest whether to load a theme manifest or a qss file
-CustomTheme::CustomTheme(ITheme* baseTheme, QFileInfo& fileInfo, bool isManifest)
+CustomTheme::CustomTheme(ITheme* baseTheme, QFileInfo& fileInfo, QDir themeDir, bool isManifest)
+    : m_themeDirectory(fileInfo.dir())
 {
     if (isManifest) {
         m_id = fileInfo.dir().dirName();
@@ -225,6 +226,19 @@ CustomTheme::CustomTheme(ITheme* baseTheme, QFileInfo& fileInfo, bool isManifest
             m_styleSheet = baseTheme->appStyleSheet();
         }
     }
+}
+
+void CustomTheme::apply()
+{
+    auto qcc_conf_path = themeDirectory().absoluteFilePath("qtquickcontrols2.conf");
+    QFileInfo qcc_conf_fileinfo {qcc_conf_path};
+
+    changed_qcc_theme = (qcc_conf_fileinfo.exists() && !qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_CONF"))
+                        || (!qcc_conf_fileinfo.exists() && qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_CONF"));
+
+    ThemeManager::writeGlobalQMLTheme(qcc_conf_path);
+
+    ITheme::apply();
 }
 
 QStringList CustomTheme::searchPaths()

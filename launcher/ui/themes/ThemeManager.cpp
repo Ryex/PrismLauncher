@@ -84,7 +84,7 @@ void ThemeManager::initializeThemes()
             if (themeJson.exists()) {
                 // Load "theme.json" based themes
                 themeDebugLog() << "Loading JSON Theme from:" << themeJson.absoluteFilePath();
-                addTheme(std::make_unique<CustomTheme>(getTheme(darkThemeId), themeJson, true));
+                addTheme(std::make_unique<CustomTheme>(getTheme(darkThemeId), themeJson, dir, true));
             } else {
                 // Load pure QSS Themes
                 QDirIterator stylesheetFileIterator(dir.absoluteFilePath(""), { "*.qss", "*.css" }, QDir::Files);
@@ -92,7 +92,7 @@ void ThemeManager::initializeThemes()
                     QFile customThemeFile(stylesheetFileIterator.next());
                     QFileInfo customThemeFileInfo(customThemeFile);
                     themeDebugLog() << "Loading QSS Theme from:" << customThemeFileInfo.absoluteFilePath();
-                    addTheme(std::make_unique<CustomTheme>(getTheme(darkThemeId), customThemeFileInfo, false));
+                    addTheme(std::make_unique<CustomTheme>(getTheme(darkThemeId), customThemeFileInfo, dir, false));
                 }
             }
         }
@@ -137,6 +137,15 @@ void ThemeManager::setApplicationTheme(const QString& name)
     }
 }
 
+bool ThemeManager::needsRestart() const
+{
+    auto theme_name = APPLICATION->settings()->get("ApplicationTheme").toString();
+    auto themeIter = m_themes.find(theme_name);
+    if (themeIter != m_themes.end())
+        return themeIter->second->changed_qcc_theme;
+    return false;
+}
+
 QString ThemeManager::getCatImage(QString catName)
 {
     QDateTime now = QDateTime::currentDateTime();
@@ -152,4 +161,19 @@ QString ThemeManager::getCatImage(QString catName)
         cat += "-bday";
     }
     return cat;
+}
+
+void ThemeManager::writeGlobalQMLTheme(const QString& conf_file_path)
+{
+    QFile global_theme_file(".qml_theme");
+    global_theme_file.open(QFile::OpenModeFlag::WriteOnly | QFile::OpenModeFlag::Truncate);
+
+    if (conf_file_path.isEmpty())
+        themeDebugLog() << "Clearing QCC config...";
+    else
+        themeDebugLog() << "Setting QCC config to:" << conf_file_path;
+
+    global_theme_file.write(conf_file_path.toLocal8Bit());
+
+    global_theme_file.close();
 }

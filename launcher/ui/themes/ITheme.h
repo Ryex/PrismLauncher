@@ -54,4 +54,6 @@ class ITheme {
     virtual QStringList searchPaths() { return {}; }
 
     static QPalette fadeInactive(QPalette in, qreal bias, QColor color);
+
+    bool changed_qcc_theme = false;
 };
