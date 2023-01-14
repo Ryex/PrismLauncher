@@ -25,3 +25,7 @@ set(gp_cmd_paths ${gp_cmd_paths}
 include(BundleUtilities)
 fixup_bundle("@APPS@" "${QTPLUGINS}" "@DIRS@")
 
+# fix doted Qt bundle paths
+execute_process(
+  COMMAND "python3" "${CMAKE_SOURCE_DIR}/cmake/fix_macos_bundle.py" "@APPS@"
+)
