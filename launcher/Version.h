@@ -68,6 +68,7 @@ private:
         explicit Section(const QString &fullString)
         {
             m_fullString = fullString;
+            m_isNull = true;
             int cutoff = m_fullString.size();
             for(int i = 0; i < m_fullString.size(); i++)
             {
@@ -85,6 +86,7 @@ private:
             if(numPart.size())
             {
                 numValid = true;
+                m_isNull = false;
                 m_numPart = numPart.toInt();
             }
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -94,6 +96,7 @@ private:
 #endif
             if(stringPart.size())
             {
+                m_isNull = false;
                 m_stringPart = stringPart.toString();
             }
         }
@@ -102,9 +105,17 @@ private:
         int m_numPart = 0;
         QString m_stringPart;
         QString m_fullString;
+        bool m_isNull;
 
         inline bool operator!=(const Section &other) const
         {
+            if (m_isNull && other.numValid) {
+                return 0 != other.m_numPart;
+            } else if (numValid && other.m_isNull) {
+                return m_numPart != 0;
+            } else if (m_isNull || other.m_isNull) {
+                return false;
+            }
             if(numValid && other.numValid)
             {
                 return m_numPart != other.m_numPart || m_stringPart != other.m_stringPart;
@@ -115,7 +126,14 @@ private:
             }
         }
         inline bool operator<(const Section &other) const
-        {
+        {   
+            if (m_isNull && other.numValid) {
+                return 0 < other.m_numPart;
+            } else if (numValid && other.m_isNull) {
+                return m_numPart < 0;
+            } else if (m_isNull || other.m_isNull) {
+                return true;
+            }
             if(numValid && other.numValid)
             {
                 if(m_numPart < other.m_numPart)
@@ -131,6 +149,13 @@ private:
         }
         inline bool operator>(const Section &other) const
         {
+            if (m_isNull && other.numValid) {
+                return 0 > other.m_numPart;
+            } else if (numValid && other.m_isNull) {
+                return m_numPart > 0;
+            } else if (m_isNull || other.m_isNull) {
+                return false;
+            }
             if(numValid && other.numValid)
             {
                 if(m_numPart > other.m_numPart)
