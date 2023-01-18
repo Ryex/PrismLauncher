@@ -93,3 +93,20 @@ void Version::parse()
         m_sections.append(Section(currentSection));
     }
 }
+
+
+/// qDebug print support for the BlockedMod struct
+QDebug operator<<(QDebug debug, const Version& v)
+{
+    QDebugStateSaver saver(debug);
+
+    debug.nospace() << "Version{ string: " << v.toString() << ", sections: [ ";
+
+    for (auto s : v.m_sections) {
+        debug.nospace() << s.m_fullString << ", ";
+    }
+                    
+    debug.nospace() << " ]" << " }";
+
+    return debug;
+}
