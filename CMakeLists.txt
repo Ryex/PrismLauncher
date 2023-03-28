@@ -176,6 +176,9 @@ set(Launcher_SUBREDDIT_URL "https://www.reddit.com/r/PrismLauncher/" CACHE STRIN
 set(Launcher_FORCE_BUNDLED_LIBS OFF CACHE BOOL "Prevent using system libraries, if they are available as submodules")
 set(Launcher_QT_VERSION_MAJOR "6" CACHE STRING "Major Qt version to build against")
 
+# Features
+option(ENABLE_ARIA2_SUPPORT "Build with Aria2 download support" OFF)
+
 # API Keys
 # NOTE: These API keys are here for convenience. If you rebrand this software or intend to break the terms of service
 # of these platforms, please change these API keys beforehand.
@@ -451,6 +454,63 @@ else()
     message(STATUS "Using system ghc_filesystem")
 endif()
 add_subdirectory(libraries/qdcss) # css parser
+
+if (ENABLE_ARIA2_SUPPORT)
+    message(STATUS "Building with aria2 support")
+
+    set(LIBARIA2_USING_EXTERNAL false)
+    
+    if (NOT Launcher_FORCE_BUNDLED_LIBS AND NOT FORCE_BUNDLED_ARIA2) 
+        find_package(LibAria2)
+    endif()
+
+    if (LIBARIA2_FOUND)
+        message(STATUS "Found libaria2 at: ${LIBARIA2_LINK_LIBRARIES}")
+    else()
+        set(FORCE_BUNDLED_ARIA2 true)
+    endif()
+
+
+    if (FORCE_BUNDLED_ARIA2)
+        message(STATUS "Forcing bundle of libaria2") 
+
+        option(WITH_LIBUV "Build aria2 with libuv" off)
+        option(WITH_APPLETLS "Build aria2 with appletls" on)
+        option(WITH_WINTLS "Build aria2 with wintls" on)
+        option(WITH_GNUTLS "Build aria2 with gnutls" on)
+        option(WITH_LIBNETTLE "Build aria2 with libnettle" off)
+        option(WITH_LIBGMP "Build aria2 with libgmp" off)
+        option(WITH_LIBGCRYPT "Build aria2 with libgcrypt" off)
+        option(WITH_OPENSSL "Build aria2 with openssl" off)
+        option(WITH_SQLITE3 "Build aria2 with SQLite3" off)
+        option(WITH_LIBXML2 "Build aria2 with libxml2" off)
+        option(WITH_LIBEXPAT "Build aria2 with libexpat" off)
+        option(WITH_LIBCARES "Build aria2 with libcares" off)
+        option(WITH_LIBZ "Build aria2 with libz" on)
+        option(WITH_TCMALLOC "Build aria2 with tcmalloc" off)
+        option(WITH_JEMALLOC "Build aria2 with jemalloc" off)
+        option(WITH_LIBSSH2 "Build aria2 with libssh2" off)
+
+        option(ENABLE_SSL "Build aria2 with ssl support" on)
+        option(ENABLE_BITTORRENT "Build aria2 with bittorrent support" off)
+        option(ENABLE_METALINK "Build aria2 with metalink support" off)
+        option(ENABLE_WEBSOCKET "Build aria2 with websocket support" off)
+        option(ENABLE_EPOLL "Build aria2 with epoll support" on)
+        option(ENABLE_LIBARIA2 "Build aria2 the libaria2 shared library" on)
+        option(ENABLE_WERROR "Builld aria2 with werror" off)
+        option(ENABLE_XML_RPC "Builld aria2 with XML RPC support" off)
+        
+        add_subdirectory(libraries/aria2 EXCLUDE_FROM_ALL)
+
+        set(LibAria2_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libraries/aria2/src" "${CMAKE_CURRENT_SOURCE_DIR}/aria2/src/includes" CACHE STRING "" FORCE)
+        set_target_properties(aria2 PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${ZLIB_INCLUDE_DIR}")
+        add_library(Aria2::LibAria2 ALIAS aria2static)
+        set(LibAria2_LIBRARY Aria2::LibAria2 CACHE STRING "libaria2 library name")
+
+        find_package(LibAria2 REQUIRED)
+    endif()
+
+endif()
 
 ############################### Built Artifacts ###############################
 

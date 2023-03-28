@@ -19,3 +19,6 @@
 [submodule "libraries/cmark"]
 	path = libraries/cmark
 	url = https://github.com/commonmark/cmark.git
+[submodule "libraries/aria2"]
+	path = libraries/aria2
+	url = https://github.com/Ryex/aria2.git

@@ -106,7 +106,7 @@
       <attribute name="title">
        <string>About</string>
       </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_5">
+      <layout class="QVBoxLayout" name="aboutTabLayout">
        <item>
         <widget class="QLabel" name="aboutLabel">
          <property name="enabled">

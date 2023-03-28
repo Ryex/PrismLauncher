@@ -44,9 +44,31 @@
 #include <net/NetJob.h>
 #include <qobject.h>
 
+
+#if defined(ENABLE_ARIA2_SUPPORT)
+#include <iostream>
+#include <sstream> 
+#include <QRegularExpression>
+
+#include <aria2/aria2.h>
+namespace aria2 {
+
+void showVersion();
+std::string featureSummary();
+std::string usedLibs();
+std::string usedCompilerAndPlatform();
+std::string getOperatingSystemInfo();
+
+}
+#endif
+
 namespace {
 QString getLink(QString link, QString name) {
     return QString("&lt;<a href='%1'>%2</a>&gt;").arg(link).arg(name);
+}
+
+QString getLink(QString link) {
+    return QString("&lt;<a href='%1'>%1</a>&gt;").arg(link);
 }
 
 QString getWebsite(QString link) {
@@ -171,6 +193,43 @@ AboutDialog::AboutDialog(QWidget *parent) : QDialog(parent), ui(new Ui::AboutDia
     connect(ui->closeButton, SIGNAL(clicked()), SLOT(close()));
 
     connect(ui->aboutQt, &QPushButton::clicked, &QApplication::aboutQt);
+
+#if defined(ENABLE_ARIA2_SUPPORT)
+    auto index = ui->aboutTabLayout->indexOf(ui->verticalSpacer);
+
+    // capture stdout to get aria2 version (yes this is the only way)
+    std::stringstream buffer;
+    std::streambuf* org = std::cout.rdbuf(buffer.rdbuf());
+    aria2::showVersion();
+    std::cout.rdbuf(org); // restore std::cout
+
+    QString showVersion_output = QString::fromStdString(buffer.str());
+
+    const QRegularExpression versionRegex("^aria2\\sversion\\s([0-9\\.]+)");
+    QRegularExpressionMatch m = versionRegex.match(showVersion_output);
+
+    QString aria2Version = "Unknown";
+    if(m.hasMatch()) {
+        aria2Version = m.captured(1);
+    } 
+
+    auto aria2Label = new QLabel(QObject::tr("Compiled with Aria2 (version: %1) support: %2").arg(aria2Version).arg(getLink("https://aria2.github.io/")), this);
+    aria2Label->setTextFormat(Qt::RichText);
+    aria2Label->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    aria2Label->setOpenExternalLinks(true);
+
+    auto aria2FeatureLabel = new QLabel(QObject::tr("Enabeled Aria2 features: \n%1").arg(QString::fromStdString(aria2::featureSummary())), this);
+    auto aria2LibaryLabel = new QLabel(QObject::tr("Linked Aria2 Libaries: \n%1").arg(QString::fromStdString(aria2::usedLibs())), this);
+   
+    aria2FeatureLabel->setWordWrap(true);
+    aria2LibaryLabel ->setWordWrap(true);
+
+    // insert just before spacer
+    ui->aboutTabLayout->insertWidget(index, aria2Label); 
+    ui->aboutTabLayout->insertWidget(index + 1, aria2FeatureLabel); 
+    ui->aboutTabLayout->insertWidget(index + 2, aria2LibaryLabel); 
+#endif
+
 }
 
 AboutDialog::~AboutDialog()

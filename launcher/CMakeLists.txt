@@ -1099,6 +1099,17 @@ target_link_libraries(Launcher_logic
     ghcFilesystem::ghc_filesystem
 )
 
+if (ENABLE_ARIA2_SUPPORT)
+    target_include_directories(Launcher_logic PUBLIC ${LIBARIA2_INCLUDE_DIRS})
+    target_compile_definitions(Launcher_logic PRIVATE ENABLE_ARIA2_SUPPORT=1)
+
+    target_link_libraries(Launcher_logic
+        Aria2::LibAria2
+    )
+
+  
+endif()
+
 if (UNIX AND NOT CYGWIN AND NOT APPLE)
     target_link_libraries(Launcher_logic
         gamemode
