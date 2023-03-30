@@ -37,7 +37,7 @@ LibAria2
 )
 
 if(LibAria2_FOUND)
-    set(LibAria2_INCLUDE_DIR "${LIBUV_INCLUDE_DIR}")
+    set(LibAria2_INCLUDE_DIR ${LibAria2_INCLUDE_DIR})
     set(LibAria2_LIBRARIES ${aria2_libraries} ${LibAria2_LIBRARY})
     if(NOT TARGET Aria2::LibAria2)
         add_library(Aria2::LibAria2 UNKNOWN IMPORTED GLOBAL)

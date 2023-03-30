@@ -505,7 +505,7 @@ if (ENABLE_ARIA2_SUPPORT)
         set(LibAria2_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/libraries/aria2/src" "${CMAKE_CURRENT_SOURCE_DIR}/aria2/src/includes" CACHE STRING "" FORCE)
         set_target_properties(aria2 PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${ZLIB_INCLUDE_DIR}")
         add_library(Aria2::LibAria2 ALIAS aria2static)
-        set(LibAria2_LIBRARY Aria2::LibAria2 CACHE STRING "libaria2 library name")
+        set(LibAria2_LIBRARY Aria2::LibAria2 CACHE STRING "libaria2 library name" FORCE)
 
         find_package(LibAria2 REQUIRED)
     endif()
