@@ -295,7 +295,7 @@ void PackInstallTask::downloadPack()
     setStatus(tr("Downloading mods..."));
     setAbortable(false);
 
-    auto jobPtr = makeShared<NetJob>(tr("Mod download"), APPLICATION->network());
+    auto jobPtr = makeShared<NetJob>(tr("Mod Download FTB"), APPLICATION->network());
     for (auto const& file : m_version.files) {
         if (file.serverOnly || file.url.isEmpty())
             continue;
@@ -317,7 +317,10 @@ void PackInstallTask::downloadPack()
     connect(jobPtr.get(), &NetJob::succeeded, this, &PackInstallTask::onModDownloadSucceeded);
     connect(jobPtr.get(), &NetJob::failed, this, &PackInstallTask::onModDownloadFailed);
     connect(jobPtr.get(), &NetJob::aborted, this, &PackInstallTask::abort);
-    connect(jobPtr.get(), &NetJob::progress, this, &PackInstallTask::setProgress);
+    connect(jobPtr.get(), &NetJob::progress, this, [this](qint64 current, qint64 total){
+        setDetails(tr("%1 out of %2 complete").arg(current).arg(total));
+        setProgress(current, total);
+    });
     connect(jobPtr.get(), &NetJob::stepProgress, this, &PackInstallTask::propogateStepProgress);
 
     m_net_job = jobPtr;
