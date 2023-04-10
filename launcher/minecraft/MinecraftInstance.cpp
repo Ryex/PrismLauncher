@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 /*
- *  PolyMC - Minecraft Launcher
+ *  Prism Launcher - Minecraft Launcher
  *  Copyright (C) 2022 Sefa Eyeoglu <contact@scrumplex.net>
  *  Copyright (C) 2022 Jamie Mansfield <jmansfield@cadixdev.org>
+ *  Copyright (C) 2022 TheKodeToad <TheKodeToad@proton.me>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -43,7 +44,6 @@
 #include "settings/SettingsObject.h"
 #include "Application.h"
 
-#include "MMCStrings.h"
 #include "pathmatcher/RegexpMatcher.h"
 #include "pathmatcher/MultiMatcher.h"
 #include "FileSystem.h"
@@ -87,6 +87,10 @@
 #include "MinecraftLoadAndCheck.h"
 #include "minecraft/gameoptions/GameOptions.h"
 #include "minecraft/update/FoldersTask.h"
+
+#ifdef Q_OS_LINUX
+#include "MangoHud.h"
+#endif
 
 #define IBUS "@im=ibus"
 
@@ -188,6 +192,10 @@ void MinecraftInstance::loadSpecificSettings()
     m_settings->registerSetting("JoinServerOnLaunch", false);
     m_settings->registerSetting("JoinServerOnLaunchAddress", "");
 
+    // Use account for instance, this does not have a global override
+    m_settings->registerSetting("UseAccountForInstance", false);
+    m_settings->registerSetting("InstanceAccountId", "");
+
     qDebug() << "Instance-type specific settings were loaded!";
 
     setSpecificSettingsLoaded(true);
@@ -280,6 +288,11 @@ QString MinecraftInstance::modsCacheLocation() const
 QString MinecraftInstance::coreModsDir() const
 {
     return FS::PathCombine(gameRoot(), "coremods");
+}
+
+QString MinecraftInstance::nilModsDir() const
+{
+    return FS::PathCombine(gameRoot(), "nilmods");
 }
 
 QString MinecraftInstance::resourcePacksDir() const
@@ -437,13 +450,24 @@ QStringList MinecraftInstance::javaArguments()
     return args;
 }
 
+QString MinecraftInstance::getLauncher()
+{
+    auto profile = m_components->getProfile();
+
+    // use legacy launcher if the traits are set
+    if (profile->getTraits().contains("legacyLaunch") || profile->getTraits().contains("alphaLaunch"))
+        return "legacy";
+
+    return "standard";
+}
+
 QMap<QString, QString> MinecraftInstance::getVariables()
 {
     QMap<QString, QString> out;
     out.insert("INST_NAME", name());
     out.insert("INST_ID", id());
-    out.insert("INST_DIR", QDir(instanceRoot()).absolutePath());
-    out.insert("INST_MC_DIR", QDir(gameRoot()).absolutePath());
+    out.insert("INST_DIR", QDir::toNativeSeparators(QDir(instanceRoot()).absolutePath()));
+    out.insert("INST_MC_DIR", QDir::toNativeSeparators(QDir(gameRoot()).absolutePath()));
     out.insert("INST_JAVA", settings()->get("JavaPath").toString());
     out.insert("INST_JAVA_ARGS", javaArguments().join(' '));
     return out;
@@ -471,9 +495,22 @@ QProcessEnvironment MinecraftInstance::createLaunchEnvironment()
 #ifdef Q_OS_LINUX
     if (settings()->get("EnableMangoHud").toBool() && APPLICATION->capabilities() & Application::SupportsMangoHud)
     {
-        auto preload = env.value("LD_PRELOAD", "") + ":libMangoHud_dlsym.so:libMangoHud.so";
 
-        env.insert("LD_PRELOAD", preload);
+        auto preloadList = env.value("LD_PRELOAD").split(QLatin1String(":"));
+        auto libPaths = env.value("LD_LIBRARY_PATH").split(QLatin1String(":"));
+
+        auto mangoHudLibString = MangoHud::getLibraryString();
+        if (!mangoHudLibString.isEmpty())
+        {
+            QFileInfo mangoHudLib(mangoHudLibString);
+
+            // dlsym variant is only needed for OpenGL and not included in the vulkan layer
+            preloadList << "libMangoHud_dlsym.so" << mangoHudLib.fileName();
+            libPaths << mangoHudLib.absolutePath();
+        }
+
+        env.insert("LD_PRELOAD", preloadList.join(QLatin1String(":")));
+        env.insert("LD_LIBRARY_PATH", libPaths.join(QLatin1String(":")));
         env.insert("MANGOHUD", "1");
     }
 
@@ -628,26 +665,13 @@ QString MinecraftInstance::createLaunchScript(AuthSessionPtr session, MinecraftS
         launchScript += "sessionId " + session->session + "\n";
     }
 
-    // libraries and class path.
-    {
-        QStringList jars, nativeJars;
-        profile->getLibraryFiles(runtimeContext(), jars, nativeJars, getLocalLibraryPath(), binRoot());
-        for(auto file: jars)
-        {
-            launchScript += "cp " + file + "\n";
-        }
-        for(auto file: nativeJars)
-        {
-            launchScript += "ext " + file + "\n";
-        }
-        launchScript += "natives " + getNativePath() + "\n";
-    }
-
     for (auto trait : profile->getTraits())
     {
         launchScript += "traits " + trait + "\n";
     }
-    launchScript += "launcher onesix\n";
+
+    launchScript += "launcher " + getLauncher() + "\n";
+
     // qDebug() << "Generated launch script:" << launchScript;
     return launchScript;
 }
@@ -782,6 +806,8 @@ QStringList MinecraftInstance::verboseDescription(AuthSessionPtr session, Minecr
         auto height = settings->get("MinecraftWinHeight").toInt();
         out << "Window size: " + QString::number(width) + " x " + QString::number(height);
     }
+    out << "";
+    out << "Launcher: " + getLauncher();
     out << "";
     return out;
 }
@@ -941,12 +967,12 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
 
     // print a header
     {
-        process->appendStep(new TextPrint(pptr, "Minecraft folder is:\n" + gameRoot() + "\n\n", MessageLevel::Launcher));
+        process->appendStep(makeShared<TextPrint>(pptr, "Minecraft folder is:\n" + gameRoot() + "\n\n", MessageLevel::Launcher));
     }
 
     // check java
     {
-        process->appendStep(new CheckJava(pptr));
+        process->appendStep(makeShared<CheckJava>(pptr));
     }
 
     // check launch method
@@ -954,13 +980,13 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
     QString method = launchMethod();
     if(!validMethods.contains(method))
     {
-        process->appendStep(new TextPrint(pptr, "Selected launch method \"" + method + "\" is not valid.\n", MessageLevel::Fatal));
+        process->appendStep(makeShared<TextPrint>(pptr, "Selected launch method \"" + method + "\" is not valid.\n", MessageLevel::Fatal));
         return process;
     }
 
     // create the .minecraft folder and server-resource-packs (workaround for Minecraft bug MCL-3732)
     {
-        process->appendStep(new CreateGameFolders(pptr));
+        process->appendStep(makeShared<CreateGameFolders>(pptr));
     }
 
     if (!serverToJoin && settings()->get("JoinServerOnLaunch").toBool())
@@ -972,7 +998,7 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
     if(serverToJoin && serverToJoin->port == 25565)
     {
         // Resolve server address to join on launch
-        auto *step = new LookupServerAddress(pptr);
+        auto step = makeShared<LookupServerAddress>(pptr);
         step->setLookupAddress(serverToJoin->address);
         step->setOutputAddressPtr(serverToJoin);
         process->appendStep(step);
@@ -981,7 +1007,7 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
     // run pre-launch command if that's needed
     if(getPreLaunchCommand().size())
     {
-        auto step = new PreLaunchCommand(pptr);
+        auto step = makeShared<PreLaunchCommand>(pptr);
         step->setWorkingDirectory(gameRoot());
         process->appendStep(step);
     }
@@ -990,43 +1016,43 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
     if(session->status != AuthSession::PlayableOffline)
     {
         if(!session->demo) {
-            process->appendStep(new ClaimAccount(pptr, session));
+            process->appendStep(makeShared<ClaimAccount>(pptr, session));
         }
-        process->appendStep(new Update(pptr, Net::Mode::Online));
+        process->appendStep(makeShared<Update>(pptr, Net::Mode::Online));
     }
     else
     {
-        process->appendStep(new Update(pptr, Net::Mode::Offline));
+        process->appendStep(makeShared<Update>(pptr, Net::Mode::Offline));
     }
 
     // if there are any jar mods
     {
-        process->appendStep(new ModMinecraftJar(pptr));
+        process->appendStep(makeShared<ModMinecraftJar>(pptr));
     }
 
     // Scan mods folders for mods
     {
-        process->appendStep(new ScanModFolders(pptr));
+        process->appendStep(makeShared<ScanModFolders>(pptr));
     }
 
     // print some instance info here...
     {
-        process->appendStep(new PrintInstanceInfo(pptr, session, serverToJoin));
+        process->appendStep(makeShared<PrintInstanceInfo>(pptr, session, serverToJoin));
     }
 
     // extract native jars if needed
     {
-        process->appendStep(new ExtractNatives(pptr));
+        process->appendStep(makeShared<ExtractNatives>(pptr));
     }
 
     // reconstruct assets if needed
     {
-        process->appendStep(new ReconstructAssets(pptr));
+        process->appendStep(makeShared<ReconstructAssets>(pptr));
     }
 
     // verify that minimum Java requirements are met
     {
-        process->appendStep(new VerifyJavaInstall(pptr));
+        process->appendStep(makeShared<VerifyJavaInstall>(pptr));
     }
 
     {
@@ -1034,7 +1060,7 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
         auto method = launchMethod();
         if(method == "LauncherPart")
         {
-            auto step = new LauncherPartLaunch(pptr);
+            auto step = makeShared<LauncherPartLaunch>(pptr);
             step->setWorkingDirectory(gameRoot());
             step->setAuthSession(session);
             step->setServerToJoin(serverToJoin);
@@ -1042,7 +1068,7 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
         }
         else if (method == "DirectJava")
         {
-            auto step = new DirectJavaLaunch(pptr);
+            auto step = makeShared<DirectJavaLaunch>(pptr);
             step->setWorkingDirectory(gameRoot());
             step->setAuthSession(session);
             step->setServerToJoin(serverToJoin);
@@ -1053,7 +1079,7 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
     // run post-exit command if that's needed
     if(getPostExitCommand().size())
     {
-        auto step = new PostLaunchCommand(pptr);
+        auto step = makeShared<PostLaunchCommand>(pptr);
         step->setWorkingDirectory(gameRoot());
         process->appendStep(step);
     }
@@ -1063,8 +1089,7 @@ shared_qobject_ptr<LaunchTask> MinecraftInstance::createLaunchTask(AuthSessionPt
     }
     if(m_settings->get("QuitAfterGameStop").toBool())
     {
-        auto step = new QuitAfterGameStop(pptr);
-        process->appendStep(step);
+        process->appendStep(makeShared<QuitAfterGameStop>(pptr));
     }
     m_launchProcess = process;
     emit launchTaskChanged(m_launchProcess);
@@ -1105,13 +1130,23 @@ std::shared_ptr<ModFolderModel> MinecraftInstance::coreModList() const
     return m_core_mod_list;
 }
 
+std::shared_ptr<ModFolderModel> MinecraftInstance::nilModList() const
+{
+    if (!m_nil_mod_list)
+    {
+        bool is_indexed = !APPLICATION->settings()->get("ModMetadataDisabled").toBool();
+        m_nil_mod_list.reset(new ModFolderModel(nilModsDir(), is_indexed, false));
+        m_nil_mod_list->disableInteraction(isRunning());
+        connect(this, &BaseInstance::runningStatusChanged, m_nil_mod_list.get(), &ModFolderModel::disableInteraction);
+    }
+    return m_nil_mod_list;
+}
+
 std::shared_ptr<ResourcePackFolderModel> MinecraftInstance::resourcePackList() const
 {
     if (!m_resource_pack_list)
     {
         m_resource_pack_list.reset(new ResourcePackFolderModel(resourcePacksDir()));
-        m_resource_pack_list->enableInteraction(!isRunning());
-        connect(this, &BaseInstance::runningStatusChanged, m_resource_pack_list.get(), &ResourcePackFolderModel::disableInteraction);
     }
     return m_resource_pack_list;
 }
@@ -1121,8 +1156,6 @@ std::shared_ptr<TexturePackFolderModel> MinecraftInstance::texturePackList() con
     if (!m_texture_pack_list)
     {
         m_texture_pack_list.reset(new TexturePackFolderModel(texturePacksDir()));
-        m_texture_pack_list->disableInteraction(isRunning());
-        connect(this, &BaseInstance::runningStatusChanged, m_texture_pack_list.get(), &ModFolderModel::disableInteraction);
     }
     return m_texture_pack_list;
 }
@@ -1132,8 +1165,6 @@ std::shared_ptr<ShaderPackFolderModel> MinecraftInstance::shaderPackList() const
     if (!m_shader_pack_list)
     {
         m_shader_pack_list.reset(new ShaderPackFolderModel(shaderPacksDir()));
-        m_shader_pack_list->disableInteraction(isRunning());
-        connect(this, &BaseInstance::runningStatusChanged, m_shader_pack_list.get(), &ModFolderModel::disableInteraction);
     }
     return m_shader_pack_list;
 }

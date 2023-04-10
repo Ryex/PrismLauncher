@@ -35,8 +35,10 @@
 
 #include "ListModel.h"
 #include "Application.h"
+#include "net/HttpMetaCache.h"
+#include "net/NetJob.h"
 
-#include <MMCStrings.h>
+#include "StringUtils.h"
 #include <Version.h>
 
 #include <QtMath>
@@ -66,7 +68,7 @@ bool FilterModel::lessThan(const QModelIndex &left, const QModelIndex &right) co
         return lv < rv;
 
     } else if(currentSorting == Sorting::ByName) {
-        return Strings::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) >= 0;
+        return StringUtils::naturalCompare(leftPack.name, rightPack.name, Qt::CaseSensitive) >= 0;
     }
 
     //UHM, some inavlid value set?!
@@ -125,12 +127,12 @@ QString ListModel::translatePackType(PackType type) const
 
 int ListModel::rowCount(const QModelIndex &parent) const
 {
-    return modpacks.size();
+    return parent.isValid() ? 0 : modpacks.size();
 }
 
 int ListModel::columnCount(const QModelIndex &parent) const
 {
-    return 1;
+    return parent.isValid() ? 0 : 1;
 }
 
 QVariant ListModel::data(const QModelIndex &index, int role) const

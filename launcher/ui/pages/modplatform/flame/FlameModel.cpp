@@ -3,7 +3,6 @@
 #include "Application.h"
 #include "ui/widgets/ProjectItem.h"
 
-#include <MMCStrings.h>
 #include <Version.h>
 
 #include <QtMath>
@@ -16,12 +15,12 @@ ListModel::~ListModel() {}
 
 int ListModel::rowCount(const QModelIndex& parent) const
 {
-    return modpacks.size();
+    return parent.isValid() ? 0 : modpacks.size();
 }
 
 int ListModel::columnCount(const QModelIndex& parent) const
 {
-    return 1;
+    return parent.isValid() ? 0 : 1;
 }
 
 QVariant ListModel::data(const QModelIndex& index, int role) const
@@ -156,7 +155,7 @@ void ListModel::fetchMore(const QModelIndex& parent)
 
 void ListModel::performPaginatedSearch()
 {
-    NetJob* netJob = new NetJob("Flame::Search", APPLICATION->network());
+    auto netJob = makeShared<NetJob>("Flame::Search", APPLICATION->network());
     auto searchUrl = QString(
                          "https://api.curseforge.com/v1/mods/search?"
                          "gameId=432&"
@@ -173,8 +172,8 @@ void ListModel::performPaginatedSearch()
     netJob->addNetAction(Net::Download::makeByteArray(QUrl(searchUrl), &response));
     jobPtr = netJob;
     jobPtr->start();
-    QObject::connect(netJob, &NetJob::succeeded, this, &ListModel::searchRequestFinished);
-    QObject::connect(netJob, &NetJob::failed, this, &ListModel::searchRequestFailed);
+    QObject::connect(netJob.get(), &NetJob::succeeded, this, &ListModel::searchRequestFinished);
+    QObject::connect(netJob.get(), &NetJob::failed, this, &ListModel::searchRequestFailed);
 }
 
 void ListModel::searchWithTerm(const QString& term, int sort)

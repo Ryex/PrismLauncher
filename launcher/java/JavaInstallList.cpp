@@ -41,7 +41,6 @@
 #include "java/JavaInstallList.h"
 #include "java/JavaCheckerJob.h"
 #include "java/JavaUtils.h"
-#include "MMCStrings.h"
 #include "minecraft/VersionFilterData.h"
 
 JavaInstallList::JavaInstallList(QObject *parent) : BaseVersionList(parent)
@@ -68,12 +67,12 @@ void JavaInstallList::load()
     if(m_status != Status::InProgress)
     {
         m_status = Status::InProgress;
-        m_loadTask = new JavaListLoadTask(this);
+        m_loadTask.reset(new JavaListLoadTask(this));
         m_loadTask->start();
     }
 }
 
-const BaseVersionPtr JavaInstallList::at(int i) const
+const BaseVersion::Ptr JavaInstallList::at(int i) const
 {
     return m_vlist.at(i);
 }
@@ -122,7 +121,7 @@ BaseVersionList::RoleList JavaInstallList::providesRoles() const
 }
 
 
-void JavaInstallList::updateListData(QList<BaseVersionPtr> versions)
+void JavaInstallList::updateListData(QList<BaseVersion::Ptr> versions)
 {
     beginResetModel();
     m_vlist = versions;
@@ -137,7 +136,7 @@ void JavaInstallList::updateListData(QList<BaseVersionPtr> versions)
     m_loadTask.reset();
 }
 
-bool sortJavas(BaseVersionPtr left, BaseVersionPtr right)
+bool sortJavas(BaseVersion::Ptr left, BaseVersion::Ptr right)
 {
     auto rleft = std::dynamic_pointer_cast<JavaInstall>(right);
     auto rright = std::dynamic_pointer_cast<JavaInstall>(left);
@@ -168,7 +167,7 @@ void JavaListLoadTask::executeTask()
     JavaUtils ju;
     QList<QString> candidate_paths = ju.FindJavaPaths();
 
-    m_job = new JavaCheckerJob("Java detection");
+    m_job.reset(new JavaCheckerJob("Java detection"));
     connect(m_job.get(), &Task::finished, this, &JavaListLoadTask::javaCheckerFinished);
     connect(m_job.get(), &Task::progress, this, &Task::setProgress);
 
@@ -210,11 +209,11 @@ void JavaListLoadTask::javaCheckerFinished()
         }
     }
 
-    QList<BaseVersionPtr> javas_bvp;
+    QList<BaseVersion::Ptr> javas_bvp;
     for (auto java : candidates)
     {
         //qDebug() << java->id << java->arch << " at " << java->path;
-        BaseVersionPtr bp_java = std::dynamic_pointer_cast<BaseVersion>(java);
+        BaseVersion::Ptr bp_java = std::dynamic_pointer_cast<BaseVersion>(java);
 
         if (bp_java)
         {

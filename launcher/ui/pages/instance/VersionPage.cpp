@@ -1,8 +1,12 @@
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-FileCopyrightText: 2022-2023 Sefa Eyeoglu <contact@scrumplex.net>
+//
+// SPDX-License-Identifier: GPL-3.0-only AND Apache-2.0
+
 /*
- *  PolyMC - Minecraft Launcher
+ *  Prism Launcher - Minecraft Launcher
  *  Copyright (c) 2022 Jamie Mansfield <jmansfield@cadixdev.org>
- *  Copyright (C) 2022 Sefa Eyeoglu <contact@scrumplex.net>
+ *  Copyright (C) 2022-2023 Sefa Eyeoglu <contact@scrumplex.net>
+ *  Copyright (C) 2022 TheKodeToad <TheKodeToad@proton.me>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -123,6 +127,21 @@ bool VersionPage::shouldDisplay() const
 void VersionPage::retranslate()
 {
     ui->retranslateUi(this);
+}
+
+void VersionPage::openedImpl()
+{
+    auto const setting_name = QString("WideBarVisibility_%1").arg(id());
+    if (!APPLICATION->settings()->contains(setting_name))
+        m_wide_bar_setting = APPLICATION->settings()->registerSetting(setting_name);
+    else
+        m_wide_bar_setting = APPLICATION->settings()->getSetting(setting_name);
+
+    ui->toolBar->setVisibilityState(m_wide_bar_setting->get().toByteArray());
+}
+void VersionPage::closedImpl()
+{
+    m_wide_bar_setting->set(ui->toolBar->getVisibilityState());
 }
 
 QMenu * VersionPage::createPopupMenu()
@@ -266,10 +285,12 @@ void VersionPage::updateButtons(int row)
     ui->actionRevert->setEnabled(controlsEnabled && patch && patch->isRevertible());
     ui->actionDownload_All->setEnabled(controlsEnabled);
     ui->actionAdd_Empty->setEnabled(controlsEnabled);
+    ui->actionImport_Components->setEnabled(controlsEnabled);
     ui->actionReload->setEnabled(controlsEnabled);
     ui->actionInstall_mods->setEnabled(controlsEnabled);
     ui->actionReplace_Minecraft_jar->setEnabled(controlsEnabled);
     ui->actionAdd_to_Minecraft_jar->setEnabled(controlsEnabled);
+    ui->actionAdd_Agents->setEnabled(controlsEnabled);
 }
 
 bool VersionPage::reloadPackProfile()
@@ -301,13 +322,29 @@ void VersionPage::on_actionReload_triggered()
 
 void VersionPage::on_actionRemove_triggered()
 {
-    if (ui->packageView->currentIndex().isValid())
+    if (!ui->packageView->currentIndex().isValid())
     {
-        // FIXME: use actual model, not reloading.
-        if (!m_profile->remove(ui->packageView->currentIndex().row()))
-        {
-            QMessageBox::critical(this, tr("Error"), tr("Couldn't remove file"));
-        }
+        return;
+    }
+    int index = ui->packageView->currentIndex().row();
+    auto component = m_profile->getComponent(index);
+    if (component->isCustom())
+    {
+        auto response = CustomMessageBox::selectable(this, tr("Confirm Removal"),
+                                                     tr("You are about to remove \"%1\".\n"
+                                                        "This is permanent and will completely remove the custom component.\n\n"
+                                                        "Are you sure?")
+                                                         .arg(component->getName()),
+                                                     QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                            ->exec();
+
+        if (response != QMessageBox::Yes)
+            return;
+    }
+    // FIXME: use actual model, not reloading.
+    if (!m_profile->remove(index))
+    {
+        QMessageBox::critical(this, tr("Error"), tr("Couldn't remove file"));
     }
     updateButtons();
     reloadPackProfile();
@@ -339,6 +376,32 @@ void VersionPage::on_actionReplace_Minecraft_jar_triggered()
     {
         m_profile->installCustomJar(jarPath);
     }
+    updateButtons();
+}
+
+void VersionPage::on_actionImport_Components_triggered()
+{
+    QStringList list = GuiUtil::BrowseForFiles("component", tr("Select components"), tr("Components (*.json)"),
+                                               APPLICATION->settings()->get("CentralModsDir").toString(), this->parentWidget());
+
+    if (!list.isEmpty()) {
+        if (!m_profile->installComponents(list)) {
+            QMessageBox::warning(this, tr("Failed to import components"),
+                                 tr("Some components could not be imported. Check logs for details"));
+        }
+    }
+
+    updateButtons();
+}
+
+void VersionPage::on_actionAdd_Agents_triggered()
+{
+    QStringList list = GuiUtil::BrowseForFiles("agent", tr("Select agents"), tr("Java agents (*.jar)"),
+                                               APPLICATION->settings()->get("CentralModsDir").toString(), this->parentWidget());
+
+    if (!list.isEmpty())
+        m_profile->installAgents(list);
+
     updateButtons();
 }
 
@@ -615,7 +678,7 @@ void VersionPage::onGameUpdateError(QString error)
     CustomMessageBox::selectable(this, tr("Error updating instance"), error, QMessageBox::Warning)->show();
 }
 
-Component * VersionPage::current()
+ComponentPtr VersionPage::current()
 {
     auto row = currentRow();
     if(row < 0)
@@ -678,6 +741,19 @@ void VersionPage::on_actionRevert_triggered()
     {
         return;
     }
+    auto component = m_profile->getComponent(version);
+
+    auto response = CustomMessageBox::selectable(this, tr("Confirm Reversion"),
+                                                 tr("You are about to revert \"%1\".\n"
+                                                    "This is permanent and will completely revert your customizations.\n\n"
+                                                    "Are you sure?")
+                                                     .arg(component->getName()),
+                                                 QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
+                        ->exec();
+
+    if (response != QMessageBox::Yes)
+        return;
+
     if(!m_profile->revertToBase(version))
     {
         // TODO: some error box here

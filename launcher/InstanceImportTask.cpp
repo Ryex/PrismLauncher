@@ -55,11 +55,9 @@
 
 #include <quazip/quazipdir.h>
 
-InstanceImportTask::InstanceImportTask(const QUrl sourceUrl, QWidget* parent)
-{
-    m_sourceUrl = sourceUrl;
-    m_parent = parent;
-}
+InstanceImportTask::InstanceImportTask(const QUrl sourceUrl, QWidget* parent, QMap<QString, QString>&& extra_info)
+    : m_sourceUrl(sourceUrl), m_extra_info(extra_info), m_parent(parent)
+{}
 
 bool InstanceImportTask::abort()
 {
@@ -68,7 +66,12 @@ bool InstanceImportTask::abort()
 
     if (m_filesNetJob)
         m_filesNetJob->abort();
-    m_extractFuture.cancel();
+    if (m_extractFuture.isRunning()) {
+        // NOTE: The tasks created by QtConcurrent::run() can't actually get cancelled,
+        // but we can use this call to check the state when the extraction finishes.
+        m_extractFuture.cancel();
+        m_extractFuture.waitForFinished();
+    }
 
     return Task::abort();
 }
@@ -90,7 +93,7 @@ void InstanceImportTask::executeTask()
         entry->setStale(true);
         m_archivePath = entry->getFullPath();
 
-        m_filesNetJob = new NetJob(tr("Modpack download"), APPLICATION->network());
+        m_filesNetJob.reset(new NetJob(tr("Modpack download"), APPLICATION->network()));
         m_filesNetJob->addNetAction(Net::Download::makeCached(m_sourceUrl, entry));
 
         connect(m_filesNetJob.get(), &NetJob::succeeded, this, &InstanceImportTask::downloadSucceeded);
@@ -164,18 +167,14 @@ void InstanceImportTask::processZipPack()
     }
     else
     {
-        QString mmcRoot = MMCZip::findFolderOfFileInZip(m_packZip.get(), "instance.cfg");
-        QString flameRoot = MMCZip::findFolderOfFileInZip(m_packZip.get(), "manifest.json");
+        QStringList paths_to_ignore { "overrides/" };
 
-        if (!mmcRoot.isNull())
-        {
+        if (QString mmcRoot = MMCZip::findFolderOfFileInZip(m_packZip.get(), "instance.cfg", paths_to_ignore); !mmcRoot.isNull()) {
             // process as MultiMC instance/pack
             qDebug() << "MultiMC:" << mmcRoot;
             root = mmcRoot;
             m_modpackType = ModpackType::MultiMC;
-        }
-        else if(!flameRoot.isNull())
-        {
+        } else if (QString flameRoot = MMCZip::findFolderOfFileInZip(m_packZip.get(), "manifest.json", paths_to_ignore); !flameRoot.isNull()) {
             // process as Flame pack
             qDebug() << "Flame:" << flameRoot;
             root = flameRoot;
@@ -191,18 +190,20 @@ void InstanceImportTask::processZipPack()
     // make sure we extract just the pack
     m_extractFuture = QtConcurrent::run(QThreadPool::globalInstance(), MMCZip::extractSubDir, m_packZip.get(), root, extractDir.absolutePath());
     connect(&m_extractFutureWatcher, &QFutureWatcher<QStringList>::finished, this, &InstanceImportTask::extractFinished);
-    connect(&m_extractFutureWatcher, &QFutureWatcher<QStringList>::canceled, this, &InstanceImportTask::extractAborted);
     m_extractFutureWatcher.setFuture(m_extractFuture);
 }
 
 void InstanceImportTask::extractFinished()
 {
     m_packZip.reset();
-    if (!m_extractFuture.result())
-    {
+
+    if (m_extractFuture.isCanceled())
+        return;
+    if (!m_extractFuture.result().has_value()) {
         emitFailed(tr("Failed to extract modpack"));
         return;
     }
+
     QDir extractDir(m_stagingPath);
 
     qDebug() << "Fixing permissions for extracted pack files...";
@@ -256,21 +257,36 @@ void InstanceImportTask::extractFinished()
     }
 }
 
-void InstanceImportTask::extractAborted()
-{
-    emitAborted();
-}
-
 void InstanceImportTask::processFlame()
 {
-    auto* inst_creation_task = new FlameCreationTask(m_stagingPath, m_globalSettings, m_parent);
+    FlameCreationTask* inst_creation_task = nullptr;
+    if (!m_extra_info.isEmpty()) {
+        auto pack_id_it = m_extra_info.constFind("pack_id");
+        Q_ASSERT(pack_id_it != m_extra_info.constEnd());
+        auto pack_id = pack_id_it.value();
+
+        auto pack_version_id_it = m_extra_info.constFind("pack_version_id");
+        Q_ASSERT(pack_version_id_it != m_extra_info.constEnd());
+        auto pack_version_id = pack_version_id_it.value();
+
+        QString original_instance_id;
+        auto original_instance_id_it = m_extra_info.constFind("original_instance_id");
+        if (original_instance_id_it != m_extra_info.constEnd())
+            original_instance_id = original_instance_id_it.value();
+
+        inst_creation_task = new FlameCreationTask(m_stagingPath, m_globalSettings, m_parent, pack_id, pack_version_id, original_instance_id);
+    } else {
+        // FIXME: Find a way to get IDs in directly imported ZIPs
+        inst_creation_task = new FlameCreationTask(m_stagingPath, m_globalSettings, m_parent, {}, {});
+    }
 
     inst_creation_task->setName(*this);
     inst_creation_task->setIcon(m_instIcon);
     inst_creation_task->setGroup(m_instGroup);
+    inst_creation_task->setConfirmUpdate(shouldConfirmUpdate());
     
     connect(inst_creation_task, &Task::succeeded, this, [this, inst_creation_task] {
-        setOverride(inst_creation_task->shouldOverride());
+        setOverride(inst_creation_task->shouldOverride(), inst_creation_task->originalInstanceID());
         emitSucceeded();
     });
     connect(inst_creation_task, &Task::failed, this, &InstanceImportTask::emitFailed);
@@ -287,7 +303,7 @@ void InstanceImportTask::processFlame()
 
 void InstanceImportTask::processTechnic()
 {
-    shared_qobject_ptr<Technic::TechnicPackProcessor> packProcessor = new Technic::TechnicPackProcessor();
+    shared_qobject_ptr<Technic::TechnicPackProcessor> packProcessor{ new Technic::TechnicPackProcessor };
     connect(packProcessor.get(), &Technic::TechnicPackProcessor::succeeded, this, &InstanceImportTask::emitSucceeded);
     connect(packProcessor.get(), &Technic::TechnicPackProcessor::failed, this, &InstanceImportTask::emitFailed);
     packProcessor->run(m_globalSettings, name(), m_instIcon, m_stagingPath);
@@ -327,14 +343,41 @@ void InstanceImportTask::processMultiMC()
 
 void InstanceImportTask::processModrinth()
 {
-    auto* inst_creation_task = new ModrinthCreationTask(m_stagingPath, m_globalSettings, m_parent, m_sourceUrl.toString());
+    ModrinthCreationTask* inst_creation_task = nullptr;
+    if (!m_extra_info.isEmpty()) {
+        auto pack_id_it = m_extra_info.constFind("pack_id");
+        Q_ASSERT(pack_id_it != m_extra_info.constEnd());
+        auto pack_id = pack_id_it.value();
+
+        QString pack_version_id;
+        auto pack_version_id_it = m_extra_info.constFind("pack_version_id");
+        if (pack_version_id_it != m_extra_info.constEnd())
+            pack_version_id = pack_version_id_it.value();
+
+        QString original_instance_id;
+        auto original_instance_id_it = m_extra_info.constFind("original_instance_id");
+        if (original_instance_id_it != m_extra_info.constEnd())
+            original_instance_id = original_instance_id_it.value();
+
+        inst_creation_task = new ModrinthCreationTask(m_stagingPath, m_globalSettings, m_parent, pack_id, pack_version_id, original_instance_id);
+    } else {
+        QString pack_id;
+        if (!m_sourceUrl.isEmpty()) {
+            QRegularExpression regex(R"(data\/([^\/]*)\/versions)");
+            pack_id = regex.match(m_sourceUrl.toString()).captured(1);
+        }
+
+        // FIXME: Find a way to get the ID in directly imported ZIPs
+        inst_creation_task = new ModrinthCreationTask(m_stagingPath, m_globalSettings, m_parent, pack_id);
+    }
 
     inst_creation_task->setName(*this);
     inst_creation_task->setIcon(m_instIcon);
     inst_creation_task->setGroup(m_instGroup);
+    inst_creation_task->setConfirmUpdate(shouldConfirmUpdate());
     
     connect(inst_creation_task, &Task::succeeded, this, [this, inst_creation_task] {
-        setOverride(inst_creation_task->shouldOverride());
+        setOverride(inst_creation_task->shouldOverride(), inst_creation_task->originalInstanceID());
         emitSucceeded();
     });
     connect(inst_creation_task, &Task::failed, this, &InstanceImportTask::emitFailed);

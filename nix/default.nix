@@ -1,101 +1,100 @@
-{ stdenv
-, lib
-, fetchFromGitHub
-, cmake
-, ninja
-, jdk8
-, jdk
-, ghc_filesystem
-, zlib
-, file
-, wrapQtAppsHook
-, xorg
-, libpulseaudio
-, qtbase
-, quazip
-, libGL
-, msaClientID ? ""
-, extraJDKs ? [ ]
-, extra-cmake-modules
-
+{
+  lib,
+  stdenv,
+  cmake,
+  ninja,
+  jdk8,
+  jdk17,
+  zlib,
+  file,
+  wrapQtAppsHook,
+  xorg,
+  libpulseaudio,
+  qtbase,
+  qtsvg,
+  qtwayland,
+  libGL,
+  quazip,
+  glfw,
+  openal,
+  extra-cmake-modules,
+  tomlplusplus,
+  ghc_filesystem,
+  cmark,
+  msaClientID ? "",
+  jdks ? [jdk17 jdk8],
+  gamemodeSupport ? true,
+  gamemode,
   # flake
-, self
-, version
-, libnbtplusplus
-, tomlplusplus
-, enableLTO ? false
+  self,
+  version,
+  libnbtplusplus,
 }:
-
-let
-  # Libraries required to run Minecraft
-  libpath = with xorg; lib.makeLibraryPath [
-    libX11
-    libXext
-    libXcursor
-    libXrandr
-    libXxf86vm
-    libpulseaudio
-    libGL
-  ];
-
-  # This variable will be passed to Minecraft by Prism Launcher
-  gameLibraryPath = libpath + ":/run/opengl-driver/lib";
-
-  javaPaths = lib.makeSearchPath "bin/java" ([ jdk jdk8 ] ++ extraJDKs);
-in
-
 stdenv.mkDerivation rec {
   pname = "prismlauncher";
   inherit version;
 
   src = lib.cleanSource self;
 
-  nativeBuildInputs = [ cmake extra-cmake-modules ninja jdk ghc_filesystem file wrapQtAppsHook ];
-  buildInputs = [ qtbase quazip zlib ];
+  nativeBuildInputs = [extra-cmake-modules cmake file jdk17 ninja wrapQtAppsHook];
+  buildInputs =
+    [
+      qtbase
+      qtsvg
+      zlib
+      quazip
+      ghc_filesystem
+      tomlplusplus
+      cmark
+    ]
+    ++ lib.optional (lib.versionAtLeast qtbase.version "6") qtwayland
+    ++ lib.optional gamemodeSupport gamemode.dev;
 
-  dontWrapQtApps = true;
+  cmakeFlags =
+    lib.optionals (msaClientID != "") ["-DLauncher_MSA_CLIENT_ID=${msaClientID}"]
+    ++ lib.optionals (lib.versionOlder qtbase.version "6") ["-DLauncher_QT_VERSION_MAJOR=5"];
 
   postUnpack = ''
-    # Copy libnbtplusplus
     rm -rf source/libraries/libnbtplusplus
     mkdir source/libraries/libnbtplusplus
     ln -s ${libnbtplusplus}/* source/libraries/libnbtplusplus
     chmod -R +r+w source/libraries/libnbtplusplus
-    # Copy tomlplusplus
-    rm -rf source/libraries/tomlplusplus
-    mkdir source/libraries/tomlplusplus
-    ln -s ${tomlplusplus}/* source/libraries/tomlplusplus
-    chmod -R +r+w source/libraries/tomlplusplus
+    chown -R $USER: source/libraries/libnbtplusplus
   '';
 
-  cmakeFlags = [
-    "-GNinja"
-    "-DLauncher_QT_VERSION_MAJOR=${lib.versions.major qtbase.version}"
-  ] ++ lib.optionals enableLTO [ "-DENABLE_LTO=on" ]
-  ++ lib.optionals (msaClientID != "") [ "-DLauncher_MSA_CLIENT_ID=${msaClientID}" ];
-
-  # we have to check if the system is NixOS before adding stdenv.cc.cc.lib (#923)
-  postInstall = ''
+  qtWrapperArgs = let
+    libpath = with xorg;
+      lib.makeLibraryPath ([
+          libX11
+          libXext
+          libXcursor
+          libXrandr
+          libXxf86vm
+          libpulseaudio
+          libGL
+          glfw
+          openal
+          stdenv.cc.cc.lib
+        ]
+        ++ lib.optional gamemodeSupport gamemode.lib);
+  in [
+    "--set LD_LIBRARY_PATH /run/opengl-driver/lib:${libpath}"
+    "--prefix PRISMLAUNCHER_JAVA_PATHS : ${lib.makeSearchPath "bin/java" jdks}"
     # xorg.xrandr needed for LWJGL [2.9.2, 3) https://github.com/LWJGL/lwjgl/issues/128
-    wrapQtApp $out/bin/prismlauncher \
-      --run '[ -f /etc/NIXOS ] && export LD_LIBRARY_PATH="${stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"' \
-      --prefix LD_LIBRARY_PATH : ${gameLibraryPath} \
-      --prefix PRISMLAUNCHER_JAVA_PATHS : ${javaPaths} \
-      --prefix PATH : ${lib.makeBinPath [ xorg.xrandr ]}
-  '';
+    "--prefix PATH : ${lib.makeBinPath [xorg.xrandr]}"
+  ];
 
   meta = with lib; {
     homepage = "https://prismlauncher.org/";
-    downloadPage = "https://prismlauncher.org/download/";
-    changelog = "https://github.com/PrismLauncher/PrismLauncher/releases";
     description = "A free, open source launcher for Minecraft";
     longDescription = ''
       Allows you to have multiple, separate instances of Minecraft (each with
       their own mods, texture packs, saves, etc) and helps you manage them and
       their associated options with a simple interface.
     '';
-    platforms = platforms.unix;
+    platforms = platforms.linux;
+    changelog = "https://github.com/PrismLauncher/PrismLauncher/releases/tag/${version}";
     license = licenses.gpl3Only;
-    maintainers = with maintainers; [ minion3665 Scrumplex ];
+    maintainers = with maintainers; [minion3665 Scrumplex];
   };
 }

@@ -51,6 +51,7 @@ class Config {
     QString LAUNCHER_CONFIGFILE;
     QString LAUNCHER_GIT;
     QString LAUNCHER_DESKTOPFILENAME;
+    QString LAUNCHER_SVGFILENAME;
 
     /// The major version number.
     int VERSION_MAJOR;
@@ -159,6 +160,8 @@ class Config {
 
     QString MODRINTH_STAGING_URL = "https://staging-api.modrinth.com/v2";
     QString MODRINTH_PROD_URL = "https://api.modrinth.com/v2";
+
+    QString FLAME_BASE_URL = "https://api.curseforge.com/v1";
 
     QString versionString() const;
     /**

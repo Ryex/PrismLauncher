@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 /*
- *  PolyMC - Minecraft Launcher
+ *  Prism Launcher - Minecraft Launcher
  *  Copyright (C) 2022 flowln <flowlnlnln@gmail.com>
  *  Copyright (c) 2022 Jamie Mansfield <jmansfield@cadixdev.org>
  *  Copyright (C) 2022 Sefa Eyeoglu <contact@scrumplex.net>
@@ -87,15 +87,15 @@ void PackInstallTask::executeTask()
 
     auto version = *version_it;
 
-    auto* netJob = new NetJob("ModpacksCH::VersionFetch", APPLICATION->network());
+    auto netJob = makeShared<NetJob>("ModpacksCH::VersionFetch", APPLICATION->network());
 
     auto searchUrl = QString(BuildConfig.MODPACKSCH_API_BASE_URL + "public/modpack/%1/%2").arg(m_pack.id).arg(version.id);
     netJob->addNetAction(Net::Download::makeByteArray(QUrl(searchUrl), &m_response));
 
-    QObject::connect(netJob, &NetJob::succeeded, this, &PackInstallTask::onManifestDownloadSucceeded);
-    QObject::connect(netJob, &NetJob::failed, this, &PackInstallTask::onManifestDownloadFailed);
-    QObject::connect(netJob, &NetJob::aborted, this, &PackInstallTask::abort);
-    QObject::connect(netJob, &NetJob::progress, this, &PackInstallTask::setProgress);
+    QObject::connect(netJob.get(), &NetJob::succeeded, this, &PackInstallTask::onManifestDownloadSucceeded);
+    QObject::connect(netJob.get(), &NetJob::failed, this, &PackInstallTask::onManifestDownloadFailed);
+    QObject::connect(netJob.get(), &NetJob::aborted, this, &PackInstallTask::abort);
+    QObject::connect(netJob.get(), &NetJob::progress, this, &PackInstallTask::setProgress);
 
     m_net_job = netJob;
 
@@ -162,7 +162,7 @@ void PackInstallTask::resolveMods()
         index++;
     }
 
-    m_mod_id_resolver_task = new Flame::FileResolvingTask(APPLICATION->network(), manifest);
+    m_mod_id_resolver_task.reset(new Flame::FileResolvingTask(APPLICATION->network(), manifest));
 
     connect(m_mod_id_resolver_task.get(), &Flame::FileResolvingTask::succeeded, this, &PackInstallTask::onResolveModsSucceeded);
     connect(m_mod_id_resolver_task.get(), &Flame::FileResolvingTask::failed, this, &PackInstallTask::onResolveModsFailed);
@@ -176,8 +176,6 @@ void PackInstallTask::resolveMods()
 
 void PackInstallTask::onResolveModsSucceeded()
 {
-    QString text;
-    QList<QUrl> urls;
     auto anyBlocked = false;
 
     Flame::Manifest results = m_mod_id_resolver_task->getResults();
@@ -191,11 +189,16 @@ void PackInstallTask::onResolveModsSucceeded()
 
         // First check for blocked mods
         if (!results_file.resolved || results_file.url.isEmpty()) {
-            QString type(local_file.type);
+            BlockedMod blocked_mod;
+            blocked_mod.name = local_file.name;
+            blocked_mod.websiteUrl = results_file.websiteUrl;
+            blocked_mod.hash = results_file.hash;
+            blocked_mod.matched = false;
+            blocked_mod.localPath = "";
+            blocked_mod.targetFolder = results_file.targetFolder;
 
-            type[0] = type[0].toUpper();
-            text += QString("%1: %2 - <a href='%3'>%3</a><br/>").arg(type, local_file.name, results_file.websiteUrl);
-            urls.append(QUrl(results_file.websiteUrl));
+            m_blocked_mods.append(blocked_mod);
+
             anyBlocked = true;
         } else {
             local_file.url = results_file.url.toString();
@@ -207,16 +210,20 @@ void PackInstallTask::onResolveModsSucceeded()
     if (anyBlocked) {
         qDebug() << "Blocked files found, displaying file list";
 
-        auto message_dialog = new BlockedModsDialog(m_parent, tr("Blocked files found"),
-                                                   tr("The following files are not available for download in third party launchers.<br/>"
-                                                      "You will need to manually download them and add them to the instance."),
-                                                   text,
-                                                   urls);
+        BlockedModsDialog message_dialog(m_parent, tr("Blocked files found"),
+                                         tr("The following files are not available for download in third party launchers.<br/>"
+                                            "You will need to manually download them and add them to the instance."),
+                                         m_blocked_mods);
 
-        if (message_dialog->exec() == QDialog::Accepted)
+        message_dialog.setModal(true);
+
+        if (message_dialog.exec() == QDialog::Accepted) {
+            qDebug() << "Post dialog blocked mods list: " << m_blocked_mods;
             createInstance();
-        else
+        } else {
             abort();
+        }
+
     } else {
         createInstance();
     }
@@ -287,7 +294,7 @@ void PackInstallTask::downloadPack()
     setStatus(tr("Downloading mods..."));
     setAbortable(false);
 
-    auto* jobPtr = new NetJob(tr("Mod download"), APPLICATION->network());
+    auto jobPtr = makeShared<NetJob>(tr("Mod download"), APPLICATION->network());
     for (auto const& file : m_version.files) {
         if (file.serverOnly || file.url.isEmpty())
             continue;
@@ -306,10 +313,10 @@ void PackInstallTask::downloadPack()
         jobPtr->addNetAction(dl);
     }
 
-    connect(jobPtr, &NetJob::succeeded, this, &PackInstallTask::onModDownloadSucceeded);
-    connect(jobPtr, &NetJob::failed, this, &PackInstallTask::onModDownloadFailed);
-    connect(jobPtr, &NetJob::aborted, this, &PackInstallTask::abort);
-    connect(jobPtr, &NetJob::progress, this, &PackInstallTask::setProgress);
+    connect(jobPtr.get(), &NetJob::succeeded, this, &PackInstallTask::onModDownloadSucceeded);
+    connect(jobPtr.get(), &NetJob::failed, this, &PackInstallTask::onModDownloadFailed);
+    connect(jobPtr.get(), &NetJob::aborted, this, &PackInstallTask::abort);
+    connect(jobPtr.get(), &NetJob::progress, this, &PackInstallTask::setProgress);
 
     m_net_job = jobPtr;
 
@@ -320,6 +327,9 @@ void PackInstallTask::downloadPack()
 void PackInstallTask::onModDownloadSucceeded()
 {
     m_net_job.reset();
+    if (!m_blocked_mods.isEmpty()) {
+        copyBlockedMods();
+    }
     emitSucceeded();
 }
 
@@ -341,6 +351,37 @@ void PackInstallTask::onModDownloadFailed(QString reason)
 {
     m_net_job.reset();
     emitFailed(reason);
+}
+
+/// @brief copy the matched blocked mods to the instance staging area
+void PackInstallTask::copyBlockedMods()
+{
+    setStatus(tr("Copying Blocked Mods..."));
+    setAbortable(false);
+    int i = 0;
+    int total = m_blocked_mods.length();
+    setProgress(i, total);
+    for (auto const& mod : m_blocked_mods) {
+        if (!mod.matched) {
+            qDebug() << mod.name << "was not matched to a local file, skipping copy";
+            continue;
+        }
+
+        auto dest_path = FS::PathCombine(m_stagingPath, ".minecraft", mod.targetFolder, mod.name);
+
+        setStatus(tr("Copying Blocked Mods (%1 out of %2 are done)").arg(QString::number(i), QString::number(total)));
+
+        qDebug() << "Will try to copy" << mod.localPath << "to" << dest_path;
+
+        if (!FS::copy(mod.localPath, dest_path)()) {
+            qDebug() << "Copy of" << mod.localPath << "to" << dest_path << "Failed";
+        }
+
+        i++;
+        setProgress(i, total);
+    }
+
+    setAbortable(true);
 }
 
 }  // namespace ModpacksCH

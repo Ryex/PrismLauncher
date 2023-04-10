@@ -137,12 +137,12 @@ QVariant ResourcePackFolderModel::headerData(int section, Qt::Orientation orient
 
 int ResourcePackFolderModel::columnCount(const QModelIndex& parent) const
 {
-    return NUM_COLUMNS;
+    return parent.isValid() ? 0 : NUM_COLUMNS;
 }
 
 Task* ResourcePackFolderModel::createUpdateTask()
 {
-    return new BasicFolderLoadTask(m_dir, [](QFileInfo const& entry) { return new ResourcePack(entry); });
+    return new BasicFolderLoadTask(m_dir, [](QFileInfo const& entry) { return makeShared<ResourcePack>(entry); });
 }
 
 Task* ResourcePackFolderModel::createParseTask(Resource& resource)

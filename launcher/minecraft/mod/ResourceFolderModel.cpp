@@ -12,14 +12,17 @@
 
 #include "tasks/Task.h"
 
-ResourceFolderModel::ResourceFolderModel(QDir dir, QObject* parent) : QAbstractListModel(parent), m_dir(dir), m_watcher(this)
+ResourceFolderModel::ResourceFolderModel(QDir dir, QObject* parent, bool create_dir) : QAbstractListModel(parent), m_dir(dir), m_watcher(this)
 {
-    FS::ensureFolderPathExists(m_dir.absolutePath());
+    if (create_dir) {
+        FS::ensureFolderPathExists(m_dir.absolutePath());
+    }
 
     m_dir.setFilter(QDir::Readable | QDir::NoDotAndDotDot | QDir::Files | QDir::Dirs);
     m_dir.setSorting(QDir::Name | QDir::IgnoreCase | QDir::LocaleAware);
 
     connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, &ResourceFolderModel::directoryChanged);
+    connect(&m_helper_thread_task, &ConcurrentTask::finished, this, [this]{ m_helper_thread_task.clear(); });
 }
 
 ResourceFolderModel::~ResourceFolderModel()
@@ -259,7 +262,7 @@ void ResourceFolderModel::resolveResource(Resource* res)
         return;
     }
 
-    auto task = createParseTask(*res);
+    Task::Ptr task{ createParseTask(*res) };
     if (!task)
         return;
 
@@ -269,13 +272,17 @@ void ResourceFolderModel::resolveResource(Resource* res)
     m_active_parse_tasks.insert(ticket, task);
 
     connect(
-        task, &Task::succeeded, this, [=] { onParseSucceeded(ticket, res->internal_id()); }, Qt::ConnectionType::QueuedConnection);
+        task.get(), &Task::succeeded, this, [=] { onParseSucceeded(ticket, res->internal_id()); }, Qt::ConnectionType::QueuedConnection);
     connect(
-        task, &Task::failed, this, [=] { onParseFailed(ticket, res->internal_id()); }, Qt::ConnectionType::QueuedConnection);
+        task.get(), &Task::failed, this, [=] { onParseFailed(ticket, res->internal_id()); }, Qt::ConnectionType::QueuedConnection);
     connect(
-        task, &Task::finished, this, [=] { m_active_parse_tasks.remove(ticket); }, Qt::ConnectionType::QueuedConnection);
+        task.get(), &Task::finished, this, [=] { m_active_parse_tasks.remove(ticket); }, Qt::ConnectionType::QueuedConnection);
 
-    QThreadPool::globalInstance()->start(task);
+    m_helper_thread_task.addTask(task);
+
+    if (!m_helper_thread_task.isRunning()) {
+        QThreadPool::globalInstance()->start(&m_helper_thread_task);
+    }
 }
 
 void ResourceFolderModel::onUpdateSucceeded()
@@ -426,7 +433,7 @@ QVariant ResourceFolderModel::data(const QModelIndex& index, int role) const
 bool ResourceFolderModel::setData(const QModelIndex& index, const QVariant& value, int role)
 {
     int row = index.row();
-    if (row < 0 || row >= rowCount(index) || !index.isValid())
+    if (row < 0 || row >= rowCount(index.parent()) || !index.isValid())
         return false;
 
     if (role == Qt::CheckStateRole)

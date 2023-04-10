@@ -83,6 +83,21 @@ struct Language
         else if(key == "es_UY") {
             result = u8"español de Latinoamérica";
         }
+        else if(key == "en_NZ") {
+            result = u8"New Zealand English"; // No idea why qt translates this to just english and not to New Zealand English
+        }
+        else if(key == "en@pirate") {
+            result = u8"Tongue of the High Seas";
+        }
+        else if(key == "en@uwu") {
+            result = u8"Cute Engwish";
+        }
+        else if(key == "tok") {
+            result = u8"toki pona";
+        }
+        else if(key == "nan") {
+            result = u8"閩南語";  // Using traditional Chinese script. Not sure if we should use simplified instead?
+        }
         else {
             result = locale.nativeLanguageName();
         }
@@ -655,7 +670,7 @@ void TranslationsModel::downloadIndex()
         return;
     }
     qDebug() << "Downloading Translations Index...";
-    d->m_index_job = new NetJob("Translations Index", APPLICATION->network());
+    d->m_index_job.reset(new NetJob("Translations Index", APPLICATION->network()));
     MetaEntryPtr entry = APPLICATION->metacache()->resolveEntry("translations", "index_v2.json");
     entry->setStale(true);
     d->m_index_task = Net::Download::makeCached(QUrl(BuildConfig.TRANSLATIONS_BASE_URL + "index_v2.json"), entry);
@@ -707,7 +722,7 @@ void TranslationsModel::downloadTranslation(QString key)
     dl->addValidator(new Net::ChecksumValidator(QCryptographicHash::Sha1, rawHash));
     dl->setProgress(dl->getProgress(), lang->file_size);
 
-    d->m_dl_job = new NetJob("Translation for " + key, APPLICATION->network());
+    d->m_dl_job.reset(new NetJob("Translation for " + key, APPLICATION->network()));
     d->m_dl_job->addNetAction(dl);
 
     connect(d->m_dl_job.get(), &NetJob::succeeded, this, &TranslationsModel::dlGood);

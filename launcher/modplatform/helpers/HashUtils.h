@@ -40,8 +40,23 @@ class ModrinthHasher : public Hasher {
     void executeTask() override;
 };
 
-Hasher::Ptr createHasher(QString file_path, ModPlatform::Provider provider);
+class BlockedModHasher : public Hasher {
+   public:
+    BlockedModHasher(QString file_path, ModPlatform::ResourceProvider provider);
+
+    void executeTask() override;
+
+    QStringList getHashTypes();
+    bool useHashType(QString type);
+   private:
+    ModPlatform::ResourceProvider provider;
+    QString hash_type;
+};
+
+Hasher::Ptr createHasher(QString file_path, ModPlatform::ResourceProvider provider);
 Hasher::Ptr createFlameHasher(QString file_path);
 Hasher::Ptr createModrinthHasher(QString file_path);
+Hasher::Ptr createBlockedModHasher(QString file_path, ModPlatform::ResourceProvider provider);
+Hasher::Ptr createBlockedModHasher(QString file_path, ModPlatform::ResourceProvider provider, QString type);
 
 }  // namespace Hashing

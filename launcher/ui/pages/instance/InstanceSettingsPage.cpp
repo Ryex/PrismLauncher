@@ -48,24 +48,29 @@
 
 #include "JavaCommon.h"
 #include "Application.h"
+#include "minecraft/auth/AccountList.h"
 
 #include "JavaDownloader.h"
 #include "java/JavaInstallList.h"
 #include "java/JavaUtils.h"
 #include "FileSystem.h"
 
-
 InstanceSettingsPage::InstanceSettingsPage(BaseInstance *inst, QWidget *parent)
     : QWidget(parent), ui(new Ui::InstanceSettingsPage), m_instance(inst)
 {
     m_settings = inst->settings();
     ui->setupUi(this);
-    auto sysMB = Sys::getSystemRam() / Sys::mebibyte;
-    ui->maxMemSpinBox->setMaximum(sysMB);
+
+    accountMenu = new QMenu(this);
+    // Use undocumented property... https://stackoverflow.com/questions/7121718/create-a-scrollbar-in-a-submenu-qt
+    accountMenu->setStyleSheet("QMenu { menu-scrollable: 1; }");
+    ui->instanceAccountSelector->setMenu(accountMenu);
+
     connect(ui->openGlobalJavaSettingsButton, &QCommandLinkButton::clicked, this, &InstanceSettingsPage::globalSettingsButtonClicked);
     connect(APPLICATION, &Application::globalSettingsAboutToOpen, this, &InstanceSettingsPage::applySettings);
     connect(APPLICATION, &Application::globalSettingsClosed, this, &InstanceSettingsPage::loadSettings);
     loadSettings();
+    updateThresholds();
 }
 
 bool InstanceSettingsPage::shouldDisplay() const
@@ -276,6 +281,13 @@ void InstanceSettingsPage::applySettings()
         m_settings->reset("JoinServerOnLaunchAddress");
     }
 
+    // Use an account for this instance
+    bool useAccountForInstance = ui->instanceAccountGroupBox->isChecked();
+    m_settings->set("UseAccountForInstance", useAccountForInstance);
+    if (!useAccountForInstance) {
+        m_settings->reset("InstanceAccountId");
+    }
+
     // FIXME: This should probably be called by a signal instead
     m_instance->updateRuntimeContext();
 }
@@ -373,6 +385,9 @@ void InstanceSettingsPage::loadSettings()
 
     ui->serverJoinGroupBox->setChecked(m_settings->get("JoinServerOnLaunch").toBool());
     ui->serverJoinAddress->setText(m_settings->get("JoinServerOnLaunchAddress").toString());
+
+    ui->instanceAccountGroupBox->setChecked(m_settings->get("UseAccountForInstance").toBool());
+    updateAccountsMenu();
 }
 
 void InstanceSettingsPage::on_javaDownloadBtn_clicked()
@@ -443,6 +458,70 @@ void InstanceSettingsPage::on_javaTestBtn_clicked()
     checker->run();
 }
 
+void InstanceSettingsPage::updateAccountsMenu()
+{
+    accountMenu->clear();
+
+    auto accounts = APPLICATION->accounts();
+    int accountIndex = accounts->findAccountByProfileId(m_settings->get("InstanceAccountId").toString());
+    MinecraftAccountPtr defaultAccount = accounts->defaultAccount();
+
+    if (accountIndex != -1 && accounts->at(accountIndex)) {
+        defaultAccount = accounts->at(accountIndex);
+    }
+
+    if (defaultAccount) {
+        ui->instanceAccountSelector->setText(defaultAccount->profileName());
+        ui->instanceAccountSelector->setIcon(getFaceForAccount(defaultAccount));
+    } else {
+        ui->instanceAccountSelector->setText(tr("No default account"));
+        ui->instanceAccountSelector->setIcon(APPLICATION->getThemedIcon("noaccount"));
+    }
+
+    for (int i = 0; i < accounts->count(); i++) {
+        MinecraftAccountPtr account = accounts->at(i);
+        QAction* action = new QAction(account->profileName(), this);
+        action->setData(i);
+        action->setCheckable(true);
+        if (accountIndex == i) {
+            action->setChecked(true);
+        }
+        action->setIcon(getFaceForAccount(account));
+        accountMenu->addAction(action);
+        connect(action, SIGNAL(triggered(bool)), this, SLOT(changeInstanceAccount()));
+    }
+}
+
+QIcon InstanceSettingsPage::getFaceForAccount(MinecraftAccountPtr account)
+{
+    if (auto face = account->getFace(); !face.isNull()) {
+        return face;
+    }
+
+    return APPLICATION->getThemedIcon("noaccount");
+}
+
+void InstanceSettingsPage::changeInstanceAccount()
+{
+    QAction* sAction = (QAction*)sender();
+
+    Q_ASSERT(sAction->data().type() == QVariant::Type::Int);
+
+    QVariant data = sAction->data();
+    int index = data.toInt();
+    auto accounts = APPLICATION->accounts();
+    auto account = accounts->at(index);
+    m_settings->set("InstanceAccountId", account->profileId());
+
+    ui->instanceAccountSelector->setText(account->profileName());
+    ui->instanceAccountSelector->setIcon(getFaceForAccount(account));
+}
+
+void InstanceSettingsPage::on_maxMemSpinBox_valueChanged(int i)
+{
+    updateThresholds();
+}
+
 void InstanceSettingsPage::checkerFinished()
 {
     checker.reset();
@@ -452,4 +531,30 @@ void InstanceSettingsPage::retranslate()
 {
     ui->retranslateUi(this);
     ui->customCommands->retranslate();  // TODO: why is this seperate from the others?
+}
+
+void InstanceSettingsPage::updateThresholds()
+{
+    auto sysMiB = Sys::getSystemRam() / Sys::mebibyte;
+    unsigned int maxMem = ui->maxMemSpinBox->value();
+
+    QString iconName;
+
+    if (maxMem >= sysMiB) {
+        iconName = "status-bad";
+        ui->labelMaxMemIcon->setToolTip(tr("Your maximum memory allocation exceeds your system memory capacity."));
+    } else if (maxMem > (sysMiB * 0.9)) {
+        iconName = "status-yellow";
+        ui->labelMaxMemIcon->setToolTip(tr("Your maximum memory allocation approaches your system memory capacity."));
+    } else {
+        iconName = "status-good";
+        ui->labelMaxMemIcon->setToolTip("");
+    }
+
+    {
+        auto height = ui->labelMaxMemIcon->fontInfo().pixelSize();
+        QIcon icon = APPLICATION->getThemedIcon(iconName);
+        QPixmap pix = icon.pixmap(height, height);
+        ui->labelMaxMemIcon->setPixmap(pix);
+    }
 }
