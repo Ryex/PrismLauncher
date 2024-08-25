@@ -25,6 +25,20 @@
 #include "minecraft/mod/ResourceFolderModel.h"
 
 #include "net/ApiDownload.h"
+#include "net/ChecksumValidator.h"
+
+static const QList<std::pair<QString, QCryptographicHash::Algorithm>> s_supported_hashes = { { "sha512", QCryptographicHash::Sha512 },
+                                                                                             { "sha256", QCryptographicHash::Sha256 },
+                                                                                             { "sha1", QCryptographicHash::Sha1 },
+                                                                                             { "md5", QCryptographicHash::Md5 } };
+std::optional<QCryptographicHash::Algorithm> findHashAlgo(QString name) {
+    for (auto [typName, algo] : s_supported_hashes) {
+        if (typName == name) {
+            return algo;
+        }
+    }
+    return {};
+}
 
 ResourceDownloadTask::ResourceDownloadTask(ModPlatform::IndexedPack::Ptr pack,
                                            ModPlatform::IndexedVersion version,
@@ -53,7 +67,16 @@ ResourceDownloadTask::ResourceDownloadTask(ModPlatform::IndexedPack::Ptr pack,
         }
     }
 
-    m_filesNetJob->addNetAction(Net::ApiDownload::makeFile(m_pack_version.downloadUrl, dir.absoluteFilePath(getFilename())));
+    auto dl = Net::ApiDownload::makeFile(m_pack_version.downloadUrl, dir.absoluteFilePath(getFilename()));
+
+    if (!m_pack_version.hash.isEmpty() && !m_pack_version.hash_type.isEmpty()) {
+        auto algo = findHashAlgo(m_pack_version.hash_type);
+        if (algo.has_value()) {
+            dl->addValidator(new Net::ChecksumValidator(algo.value(), m_pack_version.hash));
+        }
+    }
+
+    m_filesNetJob->addNetAction(dl);
     connect(m_filesNetJob.get(), &NetJob::succeeded, this, &ResourceDownloadTask::downloadSucceeded);
     connect(m_filesNetJob.get(), &NetJob::progress, this, &ResourceDownloadTask::downloadProgressChanged);
     connect(m_filesNetJob.get(), &NetJob::stepProgress, this, &ResourceDownloadTask::propagateStepProgress);
