@@ -164,6 +164,8 @@
 
 #include "console/Console.h"
 
+#include "hematite_static/src/debug.cxx.h"
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
@@ -581,6 +583,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             QLoggingCategory::setFilterRules(rules_str);
         }
 
+        prism::hematite::log::setup_rust_tracing_qdebug();
         qInfo() << "<> Log initialized.";
     }
 

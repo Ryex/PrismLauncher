@@ -32,13 +32,17 @@ if(NOT CxxQt_FOUND)
     FetchContent_Declare(
         CxxQt
         GIT_REPOSITORY https://github.com/kdab/cxx-qt-cmake.git
-        GIT_TAG main
+        GIT_TAG v0.7.0
     )
 
     FetchContent_MakeAvailable(CxxQt)
 endif()
 
-cxx_qt_import_crate(MANIFEST_PATH "./Cargo.toml" CRATES hematite_static  QT_MODULES Qt::Core)
+cxx_qt_import_crate(
+    MANIFEST_PATH "./Cargo.toml"
+    CRATES hematite_static
+    QT_MODULES Qt::Core
+)
 target_link_libraries(hematite_static INTERFACE Qt::Core)
 
 target_link_libraries(Launcher_logic  hematite_static)

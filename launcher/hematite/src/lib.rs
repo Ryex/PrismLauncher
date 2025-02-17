@@ -11,6 +11,7 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
     }
 
+    #[namespace = "prism::hematite::serde"]
     extern "Rust" {
     }
 }
