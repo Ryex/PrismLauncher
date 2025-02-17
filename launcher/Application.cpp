@@ -164,7 +164,7 @@
 
 #include "console/Console.h"
 
-#include "hematite_static/src/debug.cxx.h"
+#include "hematite_static/src/log.cxx.h"
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
