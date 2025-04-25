@@ -1371,6 +1371,8 @@ if(DEFINED Launcher_APP_BINARY_DEFS)
     target_compile_definitions(Launcher_logic PRIVATE ${Launcher_APP_BINARY_DEFS})
 endif()
 
+add_subdirectory(hematite)
+
 install(TARGETS ${Launcher_Name}
     BUNDLE DESTINATION "." COMPONENT Runtime
     LIBRARY DESTINATION ${LIBRARY_DEST_DIR} COMPONENT Runtime
@@ -1568,7 +1570,7 @@ if(INSTALL_BUNDLE STREQUAL "full")
             PATTERN "*qcertonlybackend*" EXCLUDE
         )
     endif()
-    # Wayland support
+
     if(EXISTS "${QT_PLUGINS_DIR}/wayland-graphics-integration-client")
         install(
             DIRECTORY "${QT_PLUGINS_DIR}/wayland-graphics-integration-client"

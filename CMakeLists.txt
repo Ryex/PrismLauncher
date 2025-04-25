@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)  # minimum version required by QuaZip
+cmake_minimum_required(VERSION 3.15)  # minimum version required by QuaZip & Corrosion
 
 project(Launcher)
 
@@ -425,7 +425,7 @@ elseif(UNIX)
         set(PLUGIN_DEST_DIR "plugins")
         set(BUNDLE_DEST_DIR ".")
         set(RESOURCES_DEST_DIR ".")
-
+    
         # Apps to bundle
         set(APPS "\${CMAKE_INSTALL_PREFIX}/bin/${Launcher_APP_BINARY_NAME}")
 
