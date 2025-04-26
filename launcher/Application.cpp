@@ -583,7 +583,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             QLoggingCategory::setFilterRules(rules_str);
         }
 
-        prism::hematite::log::setup_rust_tracing_qdebug();
+        prism::hematite::log::setup_rust_tracing_qdebug(prism::hematite::log::Level::DEBUG);
         qInfo() << "<> Log initialized.";
     }
 

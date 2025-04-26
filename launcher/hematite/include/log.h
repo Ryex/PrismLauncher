@@ -12,9 +12,10 @@ namespace prism {
 namespace hematite {
 namespace log {
 
-void debug(rust::Str msg);
-void warn(rust::Str msg);
-void info(rust::Str msg);
+void debug(rust::Str file, int32_t line, rust::Str function, rust::Str msg);
+void info(rust::Str file, int32_t line, rust::Str function, rust::Str msg);
+void warn(rust::Str file, int32_t line, rust::Str function, rust::Str msg);
+void critical(rust::Str file, int32_t line, rust::Str function, rust::Str msg);
 
 }  // namespace log
 }  // namespace hematite

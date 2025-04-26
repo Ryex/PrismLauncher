@@ -140,10 +140,19 @@
           default = pkgs.mkShell {
             inputsFrom = [ packages'.prismlauncher-unwrapped ];
 
+            RUSTC_VERSION = "stable";
+
             packages = with pkgs; [
               ccache
+              llvm.bintools
               llvm.clang-tools
+              rust-analyzer
+              rustfmt
+              clippy
             ];
+
+            # https://github.com/rust-lang/rust-bindgen#environment-variables
+            LIBCLANG_PATH = pkgs.lib.makeLibraryPath [ llvm.libclang.lib ];
 
             cmakeBuildType = "Debug";
             cmakeFlags = [ "-GNinja" ] ++ packages'.prismlauncher.cmakeFlags;
@@ -163,6 +172,24 @@
 
               echo ${lib.escapeShellArg welcomeMessage}
             '';
+
+            # Add precompiled library to rustc search path
+            RUSTFLAGS = (builtins.map (a: ''-L ${a}/lib'') [
+              # add libraries here (e.g. pkgs.libvmi)
+            ]);
+
+            BINDGEN_EXTRA_CLANG_ARGS =
+            # Includes normal include path
+            (builtins.map (a: ''-I"${a}/include"'') [
+              # add dev libraries here (e.g. pkgs.libvmi.dev)
+              pkgs.glibc.dev
+            ])
+            # Includes with special directory paths
+            ++ [
+              ''-I"${llvm.libclang.lib}/lib/clang/${llvm.libclang.version}/include"''
+              ''-I"${pkgs.glib.dev}/include/glib-2.0"''
+              ''-I${pkgs.glib.out}/lib/glib-2.0/include/''
+            ];
           };
         }
       );

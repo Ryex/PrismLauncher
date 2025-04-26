@@ -17,6 +17,8 @@
   zlib,
   msaClientID ? null,
   gamemodeSupport ? stdenv.hostPlatform.isLinux,
+  cargo,
+  rustc,
 }:
 assert lib.assertMsg (
   gamemodeSupport -> stdenv.hostPlatform.isLinux
@@ -84,6 +86,8 @@ stdenv.mkDerivation {
       kdePackages.quazip
       tomlplusplus
       zlib
+      cargo
+      rustc
     ]
     ++ lib.optionals stdenv.hostPlatform.isDarwin [ apple-sdk_11 ]
     ++ lib.optional gamemodeSupport gamemode;

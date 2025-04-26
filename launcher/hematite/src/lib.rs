@@ -1,5 +1,7 @@
 use qobject::QString;
 
+mod log;
+
 /// The bridge definition for our QObject
 #[cxx::bridge]
 pub mod qobject {

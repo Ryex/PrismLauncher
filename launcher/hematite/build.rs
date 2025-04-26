@@ -24,6 +24,8 @@ fn write_headers() {
 }
 
 fn main() {
+    cxx_build::CFG.doxygen = true;
+
     write_headers();
 
     let interface = Interface::default()
